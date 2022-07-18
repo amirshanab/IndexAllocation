@@ -3,14 +3,11 @@
 #include <assert.h>
 #include <string.h>
 #include <math.h>
-#include <sys/types.h>
-#include <unistd.h>
-#include <sys/stat.h>
 #include <fcntl.h>
 
 using namespace std;
 
-#define DISK_SIZE 256
+#define DISK_SIZE 16
 int MAX_FILE_SIZE;
 int FREE_BLOCKS;
 
@@ -31,7 +28,7 @@ public:
         index_block = -1;
     }
 
-    int getfile_size() {
+    int getfile_size() const {
         return file_size;
     }
 
@@ -79,6 +76,9 @@ public:
         fs_file = fsi;
         inUse = true;
     }
+    ~FileDescriptor(){
+        delete fs_file;
+    }
 
     string getFileName() {
         return file_name;
@@ -110,6 +110,9 @@ public:
     FD_Connector(int fd, FileDescriptor *file) {
         this->fd = fd;
         this->file = file;
+    }
+    ~FD_Connector(){
+        delete file;
     }
 };
 
@@ -146,8 +149,8 @@ public:
         sim_disk_fd = fopen(DISK_SIM_FILE, "w+");
         assert(sim_disk_fd);
         for (int i = 0; i < DISK_SIZE; i++) {
-            int ret_val = fseek(sim_disk_fd, i, SEEK_SET);
-            ret_val = fwrite("\0", 1, 1, sim_disk_fd);
+            fseek(sim_disk_fd, i, SEEK_SET);
+            int ret_val = fwrite("\0", 1, 1, sim_disk_fd);
             assert(ret_val == 1);
         }
         fflush(sim_disk_fd);
@@ -156,11 +159,29 @@ public:
 
     ~fsDisk() {
         fclose(sim_disk_fd);
+        OpenFileDescriptor.clear();
+        for(auto & i : MainDir){
+            delete i;
+        }
+        MainDir.clear();
+        delete [] BitVector;
+        delete [] FD_Vector;
 
     }
 
     // ------------------------------------------------------------------------
     void listAll() {
+        for (auto & i : MainDir) {
+            cout << "file size "<<  i->file->getFileName()<< " fd = " << i->fd << " size ==" << i->file->getFsFile()->getfile_size()<<endl;
+        }
+        cout << "FREEBLOCKS ---- " << FREE_BLOCKS << endl;
+        int counter =0;
+        for(int l =0; l < BitVectorSize; l++){
+            if (BitVector[l] == 0){
+                counter ++;
+            }
+        }
+        cout << "actual free blocks --" << counter << endl;
         int i = 0;
         int use;
         for (i = 0; i < MainDir.size(); i++) {
@@ -227,30 +248,9 @@ public:
         FD_Connector *MD = new FD_Connector(fd, ins);
         MainDir.push_back(MD);// Placing the newly created file into the MainDir
         OpenFileDescriptor.push_back(fd);// Placing the newly created file into the OpenFileDescriptor
-        return fd;// change after adding delete
-    }
 
-    int FD_finder() {
-        int i;
-        for (i = 0; i < BitVectorSize; i++) {
-            if (FD_Vector[i] == 0) {
-                FD_Vector[i] = 1;
-                break;
-            }
-        }
-        return i;
-    }
 
-    int BV_finder() {
-        int i;
-        for (i = 0; i < BitVectorSize; i++) {// first empty space.
-            if (BitVector[i] == 0) {
-                BitVector[i] = 1;
-                break;
-            }
-        }
-        FREE_BLOCKS--;
-        return i;
+        return fd;
     }
 
     // ------------------------------------------------------------------------
@@ -301,11 +301,22 @@ public:
 
     // ------------------------------------------------------------------------
     int WriteToFile(int fd, char *buf, int len) {
+
+        for (int i =0; i < MainDir.size(); i++){
+            if(MainDir[i]->fd == fd) {
+                fd = i;
+                break;
+            }
+        }
+
         if (sim_disk_fd == NULL || !is_formated || fd > MainDir.size() - 1) {
             return -1;
         }
-        if (MainDir[fd]->file->getFsFile()->getfile_size() + len > MAX_FILE_SIZE) {
+        if (MainDir[fd]->file->getFsFile()->getfile_size() + len > MAX_FILE_SIZE || len > FREE_BLOCKS * BSize) {
             len = MAX_FILE_SIZE - MainDir[fd]->file->getFsFile()->getfile_size();
+            if (len > FREE_BLOCKS * BSize) {
+                len = FREE_BLOCKS * BSize;
+            }
         }
         if (FREE_BLOCKS == 0 && len == 0) {
             return -1;
@@ -350,11 +361,56 @@ public:
                 }
             }
         }
+        return 1;
     }
 
     // ------------------------------------------------------------------------
-    int DelFile(string FileName) {
-
+    int DelFile(string FileName) {// fix doing problems with the MainDir.
+        if (sim_disk_fd == NULL || !is_formated) {
+            return -1;
+        }
+        int i;
+        int File_fd;
+        for (i = 0; i < MainDir.size(); i++) {
+            if (MainDir[i]->file->getFileName() == FileName) {
+                File_fd = MainDir[i]->fd;
+                break;
+            }
+        }
+        int BlocksInUse = MainDir[i]->file->getFsFile()->getBlockInUse();
+        FD_Vector[File_fd] = 0;
+        BitVector[File_fd] = 0;
+        FREE_BLOCKS += BlocksInUse;
+        unsigned char c_files;
+        for (int j = 0; j < OpenFileDescriptor.size(); j++) {
+            if (OpenFileDescriptor[j] == File_fd) {
+                OpenFileDescriptor.erase(OpenFileDescriptor.begin() + j);
+                break;
+            }
+        }
+        int Amount_to_Remove = MainDir[i]->file->getFsFile()->getfile_size();
+        int ptr_first = MainDir[i]->file->getFsFile()->getIndexBlock();
+        int k = 0;
+        while (BlocksInUse-1 > k) {
+            fseek(sim_disk_fd, k + ptr_first, SEEK_SET);
+            fread(&c_files, 1, 1, sim_disk_fd);
+            fseek(sim_disk_fd, k + ptr_first, SEEK_SET);
+            fwrite("\0", 1, 1, sim_disk_fd);
+            int ind = (int) c_files;
+            BitVector[ind] = 0;
+            ind = ind * BSize;
+            for (int p = 0; p < BSize && Amount_to_Remove > 0; p++) {
+                fseek(sim_disk_fd, p + ind, SEEK_SET);
+                fwrite("\0", 1, 1, sim_disk_fd);
+                Amount_to_Remove--;
+            }
+            k++;
+        }
+//         cout << "file size before"  << MainDir[i]->file->getFsFile()->getfile_size() << endl;
+        MainDir.erase(MainDir.begin()+i);
+//        MainDir[i]->file->getFsFile()->setFileSize(0);
+//        cout << "file size before"  << MainDir[i]->file->getFsFile()->getfile_size() << endl;
+        return File_fd;
     }
 
     // ------------------------------------------------------------------------
@@ -386,6 +442,37 @@ public:
             }
             i++;
         }
+        return 1;
+    }
+
+private:
+    void Clean_BV(int index, int BinUse) {
+
+
+    }
+
+    int FD_finder() {
+        int i;
+        for (i = 0; i < BitVectorSize; i++) {
+            if (FD_Vector[i] == 0) {
+                FD_Vector[i] = 1;
+                break;
+            }
+        }
+        return i;
+    }
+
+    int BV_finder() {
+        int i;
+        for (i = 0; i < BitVectorSize; i++) {// first empty space.
+            if (BitVector[i] == 0) {
+                BitVector[i] = 1;
+                FREE_BLOCKS--;
+                break;
+            }
+        }
+
+        return i;
     }
 };
 
@@ -406,7 +493,6 @@ int main() {
             case 0:   // exit
                 delete fs;
                 exit(0);
-                break;
 
             case 1:  // list-file
                 fs->listAll();
