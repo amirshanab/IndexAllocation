@@ -1,8 +1,8 @@
 #include <iostream>
 #include <vector>
-#include <assert.h>
-#include <string.h>
-#include <math.h>
+#include <cassert>
+#include <cstring>
+#include <cmath>
 #include <fcntl.h>
 
 using namespace std;
@@ -11,7 +11,7 @@ using namespace std;
 int MAX_FILE_SIZE;
 int FREE_BLOCKS;
 int BIGGEST_FD = -1;
-
+int FDSIZE = 0;
 
 // ============================================================================
 
@@ -90,8 +90,8 @@ public:
         return inUse;
     }
 
-    void setInUse(bool inUse) {
-        FileDescriptor::inUse = inUse;
+    void setInUse(bool inUseu) {
+        FileDescriptor::inUse = inUseu;
     }
 
     FsFile *getFsFile() const {
@@ -153,7 +153,7 @@ public:
         assert(sim_disk_fd);
         for (int i = 0; i < DISK_SIZE; i++) {
             fseek(sim_disk_fd, i, SEEK_SET);
-            int ret_val = fwrite("\0", 1, 1, sim_disk_fd);
+            size_t ret_val = fwrite("\0", 1, 1, sim_disk_fd);
             assert(ret_val == 1);
         }
         fflush(sim_disk_fd);
@@ -168,7 +168,7 @@ public:
         }
         MainDir.clear();
         delete[] BitVector;
-        delete[] FD_Vector;
+        free(FD_Vector);
     }
 
     // ------------------------------------------------------------------------
@@ -184,8 +184,8 @@ public:
             }
         }
         cout << "actual free blocks --" << counter << endl;
-        int i = 0;
         int use;
+        int i;
         for (i = 0; i < MainDir.size(); i++) {
             use = 0;
             if (MainDir[i]->file->isInUse()) {
@@ -197,8 +197,9 @@ public:
         cout << "Disk content: '";
         for (i = 0; i < DISK_SIZE; i++) {
             cout << "(";
-            int ret_val = fseek(sim_disk_fd, i, SEEK_SET);
-            ret_val = fread(&bufy, 1, 1, sim_disk_fd);
+            fseek(sim_disk_fd, i, SEEK_SET);
+            size_t ret_val = fread(&bufy, 1, 1, sim_disk_fd);
+            assert(ret_val == 1);
             cout << bufy;
             cout << ")";
         }
@@ -218,26 +219,23 @@ public:
             BitVectorSize = DISK_SIZE / blockSize;
             FREE_BLOCKS = BitVectorSize;
             BitVector = new int[BitVectorSize];
-            FD_Vector = new int[BitVectorSize];
         }
         for (int i = 0; i < BitVectorSize; i++) {
             BitVector[i] = 0;
-            FD_Vector[i] = 0;
         }
         for (int i = 0; i < DISK_SIZE; i++) {
-            int ret_val = fseek(sim_disk_fd, i, SEEK_SET);
-            ret_val = fwrite("\0", 1, 1, sim_disk_fd);
+            fseek(sim_disk_fd, i, SEEK_SET);
+            size_t ret_val = fwrite("\0", 1, 1, sim_disk_fd);
             assert(ret_val == 1);
         }
         is_formated = true;
-//        FREE_BLOCKS = DISK_SIZE/blockSize;
         BSize = blockSize;
         MAX_FILE_SIZE = blockSize * blockSize;
     }
 
     // ------------------------------------------------------------------------
     int CreateFile(string fileName) {// fix file fd !!!
-        if (sim_disk_fd == NULL || !is_formated) {
+        if (sim_disk_fd == nullptr || !is_formated) {
             return -1;
         }
         int i;
@@ -246,7 +244,10 @@ public:
                 return -1;
         }
         int fd = FD_finder();// return the index of the empty place.
-        int index = i * BSize;
+        if(fd+1 == FDSIZE){
+            FD_Vector = (int *) realloc(FD_Vector, sizeof(int) * FDSIZE);
+            FD_Vector[FDSIZE-1] = 1;
+        }
         FsFile *filef = new FsFile(BSize);
         filef->setIndexBlock(-1);
         filef->setBlockSize(BSize);
@@ -256,7 +257,6 @@ public:
         FD_Connector *MD = new FD_Connector(fd, ins);
         MainDir.push_back(MD);// Placing the newly created file into the MainDir
         OpenFileDescriptor.push_back(fd);// Placing the newly created file into the OpenFileDescriptor
-
         if (fd > BIGGEST_FD)
             BIGGEST_FD = fd;
 
@@ -265,7 +265,7 @@ public:
 
     // ------------------------------------------------------------------------
     int OpenFile(string fileName) {
-        if (sim_disk_fd == NULL || !is_formated)
+        if (sim_disk_fd == nullptr || !is_formated)
             return -1;
         int i;
         bool found = false;
@@ -288,9 +288,10 @@ public:
         }
         return -1;
     }
+
     // ------------------------------------------------------------------------
     string CloseFile(int fd) {// might need some fixing.
-        if (sim_disk_fd == NULL || !is_formated || fd > BIGGEST_FD) {
+        if (sim_disk_fd == nullptr || !is_formated || fd > BIGGEST_FD) {
             return "-1";
         }
         int i;
@@ -312,7 +313,8 @@ public:
 
     // ------------------------------------------------------------------------
     int WriteToFile(int fd, char *buf, int len) {
-        if (sim_disk_fd == NULL || !is_formated || fd > BIGGEST_FD) {
+        size_t ret_val;
+        if (sim_disk_fd == nullptr || !is_formated || fd > BIGGEST_FD) {
             return -1;
         }
         bool found = false;
@@ -323,28 +325,27 @@ public:
                 break;
             }
         }
-        if(found == false){
+        if (!found) {
             return -1;
         }
-        if(MainDir[fd]->file->getFsFile()->getIndexBlock() == -1){
+        if (MainDir[fd]->file->getFsFile()->getIndexBlock() == -1) {
             int index = BV_finder();
-            MainDir[fd]->file->getFsFile()->setIndexBlock(index*BSize);
+            MainDir[fd]->file->getFsFile()->setIndexBlock(index * BSize);
             MainDir[fd]->file->getFsFile()->setBlockInUse(1);
         }
-        if(!MainDir[fd]->file->isInUse())
+        if (!MainDir[fd]->file->isInUse())
             return -1;
         int F_SIZE = MainDir[fd]->file->getFsFile()->getfile_size();
         if (F_SIZE + len > MAX_FILE_SIZE) {
-            len = MAX_FILE_SIZE- F_SIZE;
+            len = MAX_FILE_SIZE - F_SIZE;
         }
-        if (len > FREE_BLOCKS*BSize){
-            len = FREE_BLOCKS*BSize;
+        if (len > FREE_BLOCKS * BSize) {
+            len = FREE_BLOCKS * BSize;
         }
-        if(FREE_BLOCKS == 0){
-            len = F_SIZE%BSize;
+        if (FREE_BLOCKS == 0) {
+            len = F_SIZE % BSize;
         }
         char c_files;
-        char toBi;
         int amount_written = 0;
         int ind;
         int Bsize = MainDir[fd]->file->getFsFile()->getBlockSize();
@@ -353,11 +354,13 @@ public:
         while (amount_written < len) {
             for (; i < Bsize;) {// get the block to write in.
                 fseek(sim_disk_fd, i + ptr_first, SEEK_SET);
-                fread(&c_files, 1, 1, sim_disk_fd);
+                ret_val = fread(&c_files, 1, 1, sim_disk_fd);
+                assert(ret_val == 1);
                 if (c_files == '\0') {// if nothing is written in the block
                     ind = BV_finder();
                     fseek(sim_disk_fd, i + ptr_first, SEEK_SET);
-                    fwrite((unsigned char *) &ind, 1, 1, sim_disk_fd);
+                    ret_val = fwrite((unsigned char *) &ind, 1, 1, sim_disk_fd);
+                    assert(ret_val == 1);
                     int n_BIU = MainDir[fd]->file->getFsFile()->getBlockInUse();
                     MainDir[fd]->file->getFsFile()->setBlockInUse(n_BIU + 1);
                     i++;
@@ -374,10 +377,12 @@ public:
             char B_chr;
             for (int j = 0; j < Bsize && amount_written < len; j++) {//search through the block for empty places.
                 fseek(sim_disk_fd, j + ind, SEEK_SET);
-                fread(&B_chr, 1, 1, sim_disk_fd);
+                ret_val = fread(&B_chr, 1, 1, sim_disk_fd);
+                assert(ret_val == 1);
                 if (B_chr == '\0') {
                     fseek(sim_disk_fd, j + ind, SEEK_SET);
-                    fwrite(&buf[amount_written++], 1, 1, sim_disk_fd);
+                    ret_val = fwrite(&buf[amount_written++], 1, 1, sim_disk_fd);
+                    assert(ret_val == 1);
                     int N_fs = MainDir[fd]->file->getFsFile()->getfile_size();
                     MainDir[fd]->file->getFsFile()->setFileSize(N_fs + 1);
                 }
@@ -388,7 +393,7 @@ public:
 
     // ------------------------------------------------------------------------
     int DelFile(string FileName) {// fix doing problems with the MainDir.
-        if (sim_disk_fd == NULL || !is_formated) {
+        if (sim_disk_fd == nullptr || !is_formated) {
             return -1;
         }
         bool found = false;
@@ -401,10 +406,10 @@ public:
                 break;
             }
         }
-        if(found) {
+        if (found) {
             int BlocksInUse = MainDir[i]->file->getFsFile()->getBlockInUse();
             FD_Vector[File_fd] = 0;
-            BitVector[MainDir[i]->file->getFsFile()->getIndexBlock()/BSize] = 0;
+            BitVector[MainDir[i]->file->getFsFile()->getIndexBlock() / BSize] = 0;
             FREE_BLOCKS += BlocksInUse;
             unsigned char c_files;
             for (int j = 0; j < OpenFileDescriptor.size(); j++) {
@@ -418,15 +423,18 @@ public:
             int k = 0;
             while (BlocksInUse - 1 > k) {
                 fseek(sim_disk_fd, k + ptr_first, SEEK_SET);
-                fread(&c_files, 1, 1, sim_disk_fd);
+                size_t ret_val = fread(&c_files, 1, 1, sim_disk_fd);
+                assert(ret_val == 1);
                 fseek(sim_disk_fd, k + ptr_first, SEEK_SET);
-                fwrite("\0", 1, 1, sim_disk_fd);
+                ret_val = fwrite("\0", 1, 1, sim_disk_fd);
+                assert(ret_val == 1);
                 int ind = (int) c_files;
                 BitVector[ind] = 0;
                 ind = ind * BSize;
                 for (int p = 0; p < BSize && Amount_to_Remove > 0; p++) {
                     fseek(sim_disk_fd, p + ind, SEEK_SET);
-                    fwrite("\0", 1, 1, sim_disk_fd);
+                    ret_val = fwrite("\0", 1, 1, sim_disk_fd);
+                    assert(ret_val == 1);
                     Amount_to_Remove--;
                 }
                 k++;
@@ -439,10 +447,21 @@ public:
 
     // ------------------------------------------------------------------------
     int ReadFromFile(int fd, char *buf, int len) {
-        if (sim_disk_fd == NULL || !is_formated || fd > BIGGEST_FD) {// fix size after delete fun.
+        buf[0] = '\0';
+        if (sim_disk_fd == nullptr || !is_formated || fd > BIGGEST_FD) {// fix size after delete fun.
             return -1;
         }
-        int cur_FSize = MainDir[fd]->file->getFsFile()->getfile_size();
+        bool found = false;
+        int j;
+        for (j = 0; j < MainDir.size(); j++) {
+            if (MainDir[j]->fd == fd) {
+                found = true;
+                break;
+            }
+        }
+        if (!found || !MainDir[j]->file->isInUse())
+            return -1;
+        int cur_FSize = MainDir[j]->file->getFsFile()->getfile_size();
         if (len > cur_FSize) {
             len = cur_FSize;
         }
@@ -451,17 +470,19 @@ public:
         if (len % BSize != 0) {
             BLOCKS_TO_READ++;
         }
-        int ptr_first = MainDir[fd]->file->getFsFile()->getIndexBlock();
+        int ptr_first = MainDir[j]->file->getFsFile()->getIndexBlock();
         int i = 0;
         unsigned char c_files;
         while (i < BLOCKS_TO_READ) {
             fseek(sim_disk_fd, i + ptr_first, SEEK_SET);
-            fread(&c_files, 1, 1, sim_disk_fd);
+            size_t ret_val = fread(&c_files, 1, 1, sim_disk_fd);
+            assert(ret_val == 1);
             int ind = (int) c_files;
             ind = ind * BSize;
-            for (int j = 0; j < BSize && len > 0; j++) {
-                fseek(sim_disk_fd, j + ind, SEEK_SET);
-                fread(&buf[(i * BSize) + j], 1, 1, sim_disk_fd);
+            for (int l = 0; l < BSize && len > 0; l++) {
+                fseek(sim_disk_fd, l + ind, SEEK_SET);
+                ret_val = fread(&buf[(i * BSize) + l], 1, 1, sim_disk_fd);
+                assert(ret_val == 1);
                 len--;
             }
             i++;
@@ -472,13 +493,18 @@ public:
 private:
     int FD_finder() {
         int i;
-        for (i = 0; i < BitVectorSize; i++) {
+        bool found = false;
+        for (i = 0; i < FDSIZE; i++) {
             if (FD_Vector[i] == 0) {
+                found = true;
                 FD_Vector[i] = 1;
                 break;
             }
         }
-        return i;
+        if (found)
+            return i;
+        else
+            return FDSIZE++;
     }
 
     int BV_finder() {
