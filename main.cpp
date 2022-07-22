@@ -348,6 +348,7 @@ public:
                 assert(ret_val == 1);
                 if (c_files == '\0') {// if nothing is written in the block
                     ind = BV_finder();
+                    ind+=48;
                     fseek(sim_disk_fd, i + ptr_first, SEEK_SET);
                     ret_val = fwrite((unsigned char *) &ind, 1, 1, sim_disk_fd);
                     assert(ret_val == 1);
@@ -362,7 +363,7 @@ public:
                     break;
                 }
             }
-            ind = (ind) * Bsize;
+            ind = (ind-48) * Bsize;
             //look for empty places in the block to write.
             char B_chr;
             for (int j = 0; j < Bsize && amount_written < len; j++) {//search through the block for empty places.
@@ -423,6 +424,7 @@ public:
                 ret_val = fwrite("\0", 1, 1, sim_disk_fd);
                 assert(ret_val == 1);
                 int ind = (int) c_files;
+                ind-=48;
                 BitVector[ind] = 0;
                 ind = ind * BSize;
                 for (int p = 0; p < BSize && Amount_to_Remove > 0; p++) {
@@ -474,6 +476,7 @@ public:
             size_t ret_val = fread(&c_files, 1, 1, sim_disk_fd);
             assert(ret_val == 1);
             int ind = (int) c_files;
+            ind -=48;
             ind = ind * BSize;
             for (int l = 0; l < BSize && len > 0; l++) {
                 fseek(sim_disk_fd, l + ind, SEEK_SET);
