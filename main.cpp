@@ -340,13 +340,14 @@ public:
         if (!found) {
             return -1;
         }
+        if (!MainDir[fd]->file->isInUse())
+            return -1;
         if (MainDir[fd]->file->getFsFile()->getIndexBlock() == -1) {
             int index = BV_finder();
             MainDir[fd]->file->getFsFile()->setIndexBlock(index * BSize);
             MainDir[fd]->file->getFsFile()->setBlockInUse(1);
         }
-        if (!MainDir[fd]->file->isInUse())
-            return -1;
+
         int F_SIZE = MainDir[fd]->file->getFsFile()->getfile_size();
         if (F_SIZE + len > MAX_FILE_SIZE) {
             len = MAX_FILE_SIZE - F_SIZE;
