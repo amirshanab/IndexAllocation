@@ -13,7 +13,7 @@ int MAX_FILE_SIZE;
 int FREE_BLOCKS;
 int BIGGEST_FD = -1;
 int FDSIZE = 0;
-
+int CUR_DSIZE = 0;
 // ============================================================================
 
 class FsFile {
@@ -176,37 +176,17 @@ public:
 
     // ------------------------------------------------------------------------
     void listAll() {
-        for (auto &i: MainDir) {
-            cout << "file size " << i->file->getFileName() << " fd = " << i->fd << " size =="
-                 << i->file->getFsFile()->getfile_size() << endl;
-        }
-        cout << "FREEBLOCKS ---- " << FREE_BLOCKS << endl;
-        int counter = 0;
-        for (int l = 0; l < BitVectorSize; l++) {
-            if (BitVector[l] == 0) {
-                counter++;
-            }
-        }
-        cout << "actual free blocks --" << counter << endl;
-        int use;
         int i;
         for (i = 0; i < MainDir.size(); i++) {
-            use = 0;
-            if (MainDir[i]->file->isInUse()) {
-                use = 1;
-            }
-            cout << "index: " << i << ": FileName: " << MainDir[i]->file->getFileName() << " , isInUse: " << use
-                 << endl;
+            cout << "index: " << i << ": FileName: " << MainDir[i]->file->getFileName() << " , isInUse: " << MainDir[i]->file->isInUse() << endl;
         }
         char bufy;
         cout << "Disk content: '";
         for (i = 0; i < DISK_SIZE; i++) {
-            cout << "(";
             fseek(sim_disk_fd, i, SEEK_SET);
             size_t ret_val = fread(&bufy, 1, 1, sim_disk_fd);
             assert(ret_val == 1);
-            printf("%c",bufy);
-            cout << ")";
+            cout << "(" << bufy << ")";
         }
         cout << "'" << endl;
     }
@@ -238,6 +218,7 @@ public:
         BIGGEST_FD = -1;
         FDSIZE = 0;
         is_formated = true;
+        CUR_DSIZE = 0;
         BSize = blockSize;
         MAX_FILE_SIZE = blockSize * blockSize;
     }
@@ -344,20 +325,16 @@ public:
             return -1;
         if (MainDir[fd]->file->getFsFile()->getIndexBlock() == -1) {
             int index = BV_finder();
+            CUR_DSIZE += BSize;
             MainDir[fd]->file->getFsFile()->setIndexBlock(index * BSize);
             MainDir[fd]->file->getFsFile()->setBlockInUse(1);
         }
-
         int F_SIZE = MainDir[fd]->file->getFsFile()->getfile_size();
         if (F_SIZE + len > MAX_FILE_SIZE) {
             len = MAX_FILE_SIZE - F_SIZE;
         }
-        if (len > FREE_BLOCKS * BSize) {
-            len = FREE_BLOCKS * BSize;
-        }
-        if (FREE_BLOCKS == 0) {
-            len = F_SIZE % BSize;
-        }
+        if(CUR_DSIZE+len > DISK_SIZE)
+            len = DISK_SIZE - CUR_DSIZE;
         unsigned char c_files;
         int amount_written = 0;
         int ind;
@@ -370,7 +347,7 @@ public:
                 ret_val = fread(&c_files, 1, 1, sim_disk_fd);
                 assert(ret_val == 1);
                 if (c_files == '\0') {// if nothing is written in the block
-                    ind = BV_finder()+48;
+                    ind = BV_finder();
                     fseek(sim_disk_fd, i + ptr_first, SEEK_SET);
                     ret_val = fwrite((unsigned char *) &ind, 1, 1, sim_disk_fd);
                     assert(ret_val == 1);
@@ -385,7 +362,7 @@ public:
                     break;
                 }
             }
-            ind = (ind-48) * Bsize;
+            ind = (ind) * Bsize;
             //look for empty places in the block to write.
             char B_chr;
             for (int j = 0; j < Bsize && amount_written < len; j++) {//search through the block for empty places.
@@ -396,6 +373,7 @@ public:
                     fseek(sim_disk_fd, j + ind, SEEK_SET);
                     ret_val = fwrite(&buf[amount_written++], 1, 1, sim_disk_fd);
                     assert(ret_val == 1);
+                    CUR_DSIZE++;
                     int N_fs = MainDir[fd]->file->getFsFile()->getfile_size();
                     MainDir[fd]->file->getFsFile()->setFileSize(N_fs + 1);
                 }
@@ -424,6 +402,9 @@ public:
             FD_Vector[File_fd] = 0;
             BitVector[MainDir[i]->file->getFsFile()->getIndexBlock() / BSize] = 0;
             FREE_BLOCKS += BlocksInUse;
+            if(MainDir[i]->file->getFsFile()->getfile_size() !=0){
+                CUR_DSIZE-=BSize;
+            }
             unsigned char c_files;
             for (int j = 0; j < OpenFileDescriptor.size(); j++) {
                 if (OpenFileDescriptor[j] == File_fd) {
@@ -448,14 +429,16 @@ public:
                     fseek(sim_disk_fd, p + ind, SEEK_SET);
                     ret_val = fwrite("\0", 1, 1, sim_disk_fd);
                     assert(ret_val == 1);
+                    CUR_DSIZE--;
                     Amount_to_Remove--;
                 }
                 k++;
             }
             delete MainDir[i];
             MainDir.erase(MainDir.begin() + i);
+            return File_fd;
         }
-        return File_fd;
+        return -1;
     }
 
     // ------------------------------------------------------------------------
