@@ -8,7 +8,7 @@
 
 using namespace std;
 
-#define DISK_SIZE 18
+#define DISK_SIZE 80
 int MAX_FILE_SIZE;
 int FREE_BLOCKS;
 int BIGGEST_FD = -1;
@@ -205,7 +205,7 @@ public:
             fseek(sim_disk_fd, i, SEEK_SET);
             size_t ret_val = fread(&bufy, 1, 1, sim_disk_fd);
             assert(ret_val == 1);
-            cout << bufy;
+            printf("%c",bufy);
             cout << ")";
         }
         cout << "'" << endl;
@@ -370,7 +370,7 @@ public:
                 ret_val = fread(&c_files, 1, 1, sim_disk_fd);
                 assert(ret_val == 1);
                 if (c_files == '\0') {// if nothing is written in the block
-                    ind = BV_finder();
+                    ind = BV_finder()+48;
                     fseek(sim_disk_fd, i + ptr_first, SEEK_SET);
                     ret_val = fwrite((unsigned char *) &ind, 1, 1, sim_disk_fd);
                     assert(ret_val == 1);
@@ -385,7 +385,7 @@ public:
                     break;
                 }
             }
-            ind = ind * Bsize;
+            ind = (ind-48) * Bsize;
             //look for empty places in the block to write.
             char B_chr;
             for (int j = 0; j < Bsize && amount_written < len; j++) {//search through the block for empty places.
