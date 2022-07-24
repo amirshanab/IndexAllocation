@@ -5,7 +5,6 @@
 #include <cstring>
 #include <cmath>
 #include <fcntl.h>
-
 using namespace std;
 
 #define DISK_SIZE 256
@@ -52,42 +51,33 @@ public:
         block_size = blockSize;
     }
 };
-
 // ============================================================================
-
 class FileDescriptor {
     string file_name;
     FsFile *fs_file;
     bool inUse;
 
 public:
-
     FileDescriptor(string FileName, FsFile *fsi) {
         file_name = std::move(FileName);
         fs_file = fsi;
         inUse = true;
     }
-
     ~FileDescriptor() {
         delete fs_file;
     }
-
     string getFileName() {
         return file_name;
     }
-
     bool isInUse() const {
         return inUse;
     }
-
     void setInUse(bool inUseu) {
         FileDescriptor::inUse = inUseu;
     }
-
     FsFile *getFsFile() const {
         return fs_file;
     }
-
 };
 
 #define DISK_SIM_FILE "DISK_SIM_FILE.txt"
@@ -102,7 +92,6 @@ public:
         this->fd = fd;
         this->file = file;
     }
-
     ~FD_Connector() {
         delete file;
     }
@@ -129,7 +118,6 @@ public:
         fflush(sim_disk_fd);
         is_formated = false;
     }
-
     ~fsDisk() {
         fclose(sim_disk_fd);
         if (is_formated) {// if the file was not formated we only close thr file that was opened in the constructor.
@@ -142,7 +130,6 @@ public:
             free(FD_Vector);
         }
     }
-
     // ------------------------------------------------------------------------
     void listAll() {
         int i;
@@ -159,7 +146,6 @@ public:
         }
         cout << "'" << endl;
     }
-
     // ------------------------------------------------------------------------
     void fsFormat(int blockSize = 4) {// add file descriptor deleter.
         if (is_formated) {// if the file was formated before
@@ -191,7 +177,6 @@ public:
         BSize = blockSize;
         MAX_FILE_SIZE = blockSize * blockSize;
     }
-
     // ------------------------------------------------------------------------
     int CreateFile(const string &fileName) {
         if (sim_disk_fd == nullptr || !is_formated) {// if the disk was not created or formated.
@@ -223,7 +208,6 @@ public:
             BIGGEST_FD = fd;// if so then we set the new fd to be the biggest.
         return fd;
     }
-
     // ------------------------------------------------------------------------
     int OpenFile(const string &fileName) {
         if (sim_disk_fd == nullptr || !is_formated)
@@ -249,7 +233,6 @@ public:
         }
         return -1;
     }
-
     // ------------------------------------------------------------------------
     string CloseFile(int fd) {
         if (sim_disk_fd == nullptr || !is_formated || fd > BIGGEST_FD) {
@@ -372,9 +355,12 @@ public:
                 break;
             }
         }
+        if(!found||MainDir[i]->file->isInUse())
+            return -1;
         if (found) {
             int BlocksInUse = MainDir[i]->file->getFsFile()->getBlockInUse();
             FD_Vector[File_fd] = 0;// set the value in the FD array to zero indicating that this fd is not used.
+            if(BlocksInUse > 0)
             BitVector[MainDir[i]->file->getFsFile()->getIndexBlock() / BSize] = 0;// setting the value of the bitvector to zero indicating that the block is free.
             FREE_BLOCKS += BlocksInUse;// adding the amount of blocks that were used by the file to the free blocks' var.
             if (MainDir[i]->file->getFsFile()->getfile_size() != 0) {// checking if the file has something written on it.
@@ -462,7 +448,6 @@ public:
         }
         return 1;
     }
-
 private:
     int FD_finder() {//a function to find a place in the fd array to keep track of the fds.
         int i;
