@@ -7,7 +7,7 @@
 #include <fcntl.h>
 using namespace std;
 
-#define DISK_SIZE 64
+#define DISK_SIZE 256
 int MAX_FILE_SIZE;
 int FREE_BLOCKS;// to know how many free blocks we have
 int BIGGEST_FD = -1;// keep track of the biggest fd we have
