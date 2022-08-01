@@ -7,7 +7,7 @@
 #include <fcntl.h>
 using namespace std;
 
-#define DISK_SIZE 256
+#define DISK_SIZE 80
 int MAX_FILE_SIZE;
 int FREE_BLOCKS;// to know how many free blocks we have
 int BIGGEST_FD = -1;// keep track of the biggest fd we have
@@ -114,11 +114,6 @@ public:
     }
     // ------------------------------------------------------------------------
     void listAll() {
-//        for(int i =0; i < MainDir.size();i++){
-//            cout << "File name : " << MainDir[i]->file->getFileName() << " file FD = " << MainDir[i]->fd << " file size  = " << MainDir[i]->file->getFsFile()->getfile_size() << endl;
-//        }
-//        cout << "Free blocks = " <<FREE_BLOCKS << endl;
-//        cout << "cur DiskSize  = " <<CUR_DSIZE << endl;
         int i;
         for (i = 0; i < MainDir.size(); i++) cout << "index: " << i << ": FileName: " << MainDir[i]->file->getFileName() << " , isInUse: " << MainDir[i]->file->isInUse() << endl;
         char bufy;
@@ -216,6 +211,9 @@ public:
             int j;
             for (j = 0; j < MainDir.size(); j++) {
                 if (MainDir[j]->fd == fd) {
+                    int File_fd = MainDir[j]->fd;
+                    FD_Vector[File_fd] = 0;// set the value in the FD array to zero indicating that this fd is not used.
+                    MainDir[j]->fd = -1;
                     MainDir[j]->file->setInUse(false);// set the value to false.
                     break;}
             }
@@ -291,12 +289,10 @@ public:
         int File_fd;
         for (i = 0; i < MainDir.size(); i++) {// checking if the file exists.
             if (MainDir[i]->file->getFileName() == FileName) {
-                File_fd = MainDir[i]->fd;
                 found = true;//if found.
                 break;}}
         if(!found||MainDir[i]->file->isInUse()) return -1;
             int BlocksInUse = MainDir[i]->file->getFsFile()->getBlockInUse();
-            FD_Vector[File_fd] = 0;// set the value in the FD array to zero indicating that this fd is not used.
             if(BlocksInUse > 0)
             BitVector[MainDir[i]->file->getFsFile()->getIndexBlock() / BSize] = 0;// setting the value of the bitvector to zero indicating that the block is free.
             FREE_BLOCKS += BlocksInUse;// adding the amount of blocks that were used by the file to the free blocks' var.
@@ -331,7 +327,7 @@ public:
             }
             delete MainDir[i];// deleting it from the main dir vector.
             MainDir.erase(MainDir.begin() + i);// erasing it
-            return File_fd;
+            return 1;
     }
     // ------------------------------------------------------------------------
     int ReadFromFile(int fd, char *buf, int len) {
