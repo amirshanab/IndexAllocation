@@ -7,7 +7,7 @@
 #include <fcntl.h>
 using namespace std;
 
-#define DISK_SIZE 64
+#define DISK_SIZE 256
 int MAX_FILE_SIZE;
 int FREE_BLOCKS;// to know how many free blocks we have
 int BIGGEST_FD = -1;// keep track of the biggest fd we have
@@ -289,16 +289,16 @@ public:
         if (sim_disk_fd == nullptr || !is_formated) return -1;
         bool found = false;
         int i;
-        int File_fd;
         for (i = 0; i < MainDir.size(); i++) {// checking if the file exists.
             if (MainDir[i]->file->getFileName() == FileName) {
                 found = true;//if found.
                 break;}}
         if(!found||MainDir[i]->file->isInUse()) return -1;
             int BlocksInUse = MainDir[i]->file->getFsFile()->getBlockInUse();
-            if(BlocksInUse > 0)
-            BitVector[MainDir[i]->file->getFsFile()->getIndexBlock() / BSize] = 0;// setting the value of the bitvector to zero indicating that the block is free.
-            FREE_BLOCKS += BlocksInUse;// adding the amount of blocks that were used by the file to the free blocks' var.
+            if(BlocksInUse > 0) {
+                BitVector[MainDir[i]->file->getFsFile()->getIndexBlock() / BSize] = 0;// setting the value of the bitvector to zero indicating that the block is free.
+                FREE_BLOCKS += BlocksInUse;// adding the amount of blocks that were used by the file to the free blocks' var.
+            }
             if (MainDir[i]->file->getFsFile()->getfile_size() != 0)// checking if the file has something written on it.
                 CUR_DSIZE -= BSize;
             unsigned char c_files;
